@@ -1,5 +1,7 @@
 import express from "express";
 import bodyParser from "body-parser";
+import cors from "cors";
+
 import pg from "pg";
 import "dotenv/config";
 const { Pool } = pg;
@@ -7,7 +9,8 @@ const { Pool } = pg;
 const app = express();
 
 app.use(bodyParser.json());
-//hello
+app.use(cors());
+
 const pool = new Pool({
   host: process.env.host,
   port: Number(process.env.port),
@@ -16,24 +19,27 @@ const pool = new Pool({
   password: process.env.password,
 });
 
-app.get("/log", async (req, res, next) => {
+app.post("/log", async (req, res, next) => {
   const data = req.body;
   const client = await pool.connect();
 
   const result = await client.query(
-    "SELECT name, password, email FROM users WHERE name=$1 AND password=$2 AND email=$3",
-    [data.name, data.password, data.email]
+    "SELECT name, password FROM users WHERE name=$1 AND password=$2",
+    [data.name, data.password]
   );
   console.log(result.rows);
   if (result.rows.length > 0) {
     res.status(200).json({
       name: result.rows[0].name,
       password: result.rows[0].password,
-      email: result.rows[0].password,
       found: true,
     });
   } else {
-    res.status(404).json({ found: false });
+    res.status(404).json({
+      name: data.name,
+      password: data.password,
+      found: false,
+    });
   }
 });
 
@@ -43,19 +49,19 @@ const check = (data) => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const invalidCharacters = /[\';"]/;
   if (!data.name || !data.email || !data.password) {
-    return {valid:false,message:'Not provided all data'};
-  } else if (!passwordRegex.test(data.password)) {
-    return {valid:false, message:"Incude special characters in password"};
+    return { valid: false, message: "Not provided all data" };
   } else if (!emailRegex.test(data.email)) {
-    return {valid:false, message:"Input is not email"};
+    return { valid: false, message: "Not valid Email" };
+  } else if (!passwordRegex.test(data.password)) {
+    return { valid: false, message: "Incude special characters in password" };
   } else if (
     invalidCharacters.test(data.name) ||
     invalidCharacters.test(data.email) ||
     invalidCharacters.test(data.password)
   ) {
-    return {valid:false, message:'sql injection'};
-  }else{
-    return {valid: true, message:"User added"}
+    return { valid: false, message: "sql injection" };
+  } else {
+    return { valid: true, message: "User added" };
   }
 };
 
@@ -69,14 +75,20 @@ app.post("/reg", async (req, res, next) => {
         "INSERT INTO users (name, password, email) VALUES ($1,$2,$3)",
         [data.name, data.password, data.email]
       );
-      res.status(200).send(validation.message);
+      res.status(200).json({
+        message: validation.message,
+        added: true,
+      });
     } else {
-      res.status(400).send(validation.message);
+      res.status(400).json({
+        message: validation.message,
+        added: false,
+      });
     }
   } catch (error) {
-    console.log(error);
-    res.status(500).send(error.detail);
-  } finally{
+    
+    res.status(406).json({message:"user already exists"});
+  } finally {
     client.release();
   }
 });
